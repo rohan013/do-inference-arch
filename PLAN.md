@@ -119,8 +119,8 @@ kubectl get pods -n inference
 
 ```bash
 cd router
-pip install -r requirements.txt
-python -m unittest test_classifier.py
+pip install -r ../requirements-dev.txt
+pytest
 docker build -t do-inference-router .
 ```
 
@@ -164,6 +164,8 @@ Steps automated:
 ```bash
 # Validate Python modules
 cd do-inference-arch
+pip install -r requirements-dev.txt
+pytest --cov=router --cov=worker --cov-report=term-missing
 python -c "from worker.quant_config import MIXTRAL_QUANT; print(MIXTRAL_QUANT)"
 python -c "from worker.agentic_scheduler import AgenticBatchScheduler; s = AgenticBatchScheduler(); print(s.stats())"
 

@@ -127,7 +127,11 @@ async def _proxy_upstream(
     }
     start = time.perf_counter()
     try:
-        response = await client.post(url, json=body, headers=headers, stream=stream)
+        if stream:
+            upstream_request = client.build_request("POST", url, json=body, headers=headers)
+            response = await client.send(upstream_request, stream=True)
+        else:
+            response = await client.post(url, json=body, headers=headers)
     except httpx.HTTPError as exc:
         ROUTER_ERRORS.labels(
             classification.route_pool.value, "upstream_error"
