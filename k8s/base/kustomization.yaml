@@ -13,5 +13,9 @@ resources:
   - monitoring/prometheus.yaml
   - monitoring/grafana.yaml
   - monitoring/dcgm-exporter.yaml
+  - monitoring/prometheus-adapter-config.yaml
+  - monitoring/prometheus-adapter.yaml
+  - autoscaling/vllm-decode-hpa.yaml
+  - autoscaling/vllm-prefill-hpa.yaml
   - ingress/loadbalancer-service.yaml
   - gpu/checkpoint-cache-daemonset.yaml

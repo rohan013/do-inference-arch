@@ -1,0 +1,165 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-adapter
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: prometheus-adapter
+    app.kubernetes.io/part-of: do-agentic-inference
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-adapter
+  labels:
+    app.kubernetes.io/name: prometheus-adapter
+    app.kubernetes.io/part-of: do-agentic-inference
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "namespaces", "pods", "services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["custom.metrics.k8s.io"]
+    resources: ["*"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-adapter
+  labels:
+    app.kubernetes.io/name: prometheus-adapter
+    app.kubernetes.io/part-of: do-agentic-inference
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-adapter
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-adapter
+    namespace: inference
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-adapter-auth-reader
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: prometheus-adapter
+    app.kubernetes.io/part-of: do-agentic-inference
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: extension-apiserver-authentication-reader
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-adapter
+    namespace: inference
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-adapter-resource-reader
+  labels:
+    app.kubernetes.io/name: prometheus-adapter
+    app.kubernetes.io/part-of: do-agentic-inference
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces", "pods", "services"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-adapter-resource-reader
+  labels:
+    app.kubernetes.io/name: prometheus-adapter
+    app.kubernetes.io/part-of: do-agentic-inference
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-adapter-resource-reader
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-adapter
+    namespace: inference
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus-adapter
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: prometheus-adapter
+    app.kubernetes.io/part-of: do-agentic-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus-adapter
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus-adapter
+        app.kubernetes.io/part-of: do-agentic-inference
+    spec:
+      serviceAccountName: prometheus-adapter
+      containers:
+        - name: prometheus-adapter
+          image: registry.k8s.io/prometheus-adapter/prometheus-adapter:v0.12.0
+          args:
+            - --cert-dir=/var/run/serving-cert
+            - --config=/etc/adapter/config.yaml
+            - --metrics-relist-interval=1m
+            - --prometheus-url=http://prometheus.inference.svc:9090/
+            - --secure-port=6443
+          ports:
+            - name: https
+              containerPort: 6443
+          volumeMounts:
+            - name: config
+              mountPath: /etc/adapter
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-adapter-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-adapter
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: prometheus-adapter
+    app.kubernetes.io/part-of: do-agentic-inference
+spec:
+  ports:
+    - port: 443
+      targetPort: https
+  selector:
+    app.kubernetes.io/name: prometheus-adapter
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta1.custom.metrics.k8s.io
+  labels:
+    app.kubernetes.io/name: prometheus-adapter
+    app.kubernetes.io/part-of: do-agentic-inference
+spec:
+  service:
+    name: prometheus-adapter
+    namespace: inference
+    port: 443
+  group: custom.metrics.k8s.io
+  version: v1beta1
+  insecureSkipTLSVerify: true
+  groupPriorityMinimum: 100
+  versionPriorityMinimum: 100

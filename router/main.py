@@ -7,6 +7,7 @@ appropriate vLLM pool (prefill or decode).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -18,9 +19,10 @@ from typing import Any
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
 from classifier import Classification, classify_request
+from pool_metrics import PoolLoadTracker
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").upper()
 logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO))
@@ -29,7 +31,7 @@ logger = logging.getLogger("request-router")
 ROUTER_REQUESTS = Counter(
     "router_requests_total",
     "Total routed requests",
-    ["route_pool", "model_class"],
+    ["route_pool", "model_class", "route_reason"],
 )
 ROUTER_LATENCY = Histogram(
     "router_upstream_latency_seconds",
@@ -42,11 +44,19 @@ ROUTER_ERRORS = Counter(
     "Upstream proxy failures",
     ["route_pool", "status"],
 )
+ROUTER_POOL_QUEUE_DEPTH = Gauge(
+    "router_pool_queue_depth",
+    "Cached vLLM queue depth per pool",
+    ["pool"],
+)
 
 DEFAULT_MODEL = os.getenv("DEFAULT_MODEL", "llama-3.1-8b")
 HTTP_PORT = int(os.getenv("HTTP_PORT", "8080"))
 METRICS_PORT = int(os.getenv("METRICS_PORT", "9090"))
 UPSTREAM_TIMEOUT = float(os.getenv("UPSTREAM_TIMEOUT_SECONDS", "300"))
+POOL_METRICS_POLL_INTERVAL = float(os.getenv("POOL_METRICS_POLL_INTERVAL_SECONDS", "2"))
+PREFILL_SERVICE_URL = os.getenv("PREFILL_SERVICE_URL", "http://vllm-prefill:8000")
+DECODE_SERVICE_URL = os.getenv("DECODE_SERVICE_URL", "http://vllm-decode:8000")
 
 
 @asynccontextmanager
@@ -56,9 +66,22 @@ async def lifespan(app: FastAPI):
     start_http_server(METRICS_PORT)
     logger.info("Metrics server listening on :%s", METRICS_PORT)
     app.state.http = httpx.AsyncClient(timeout=UPSTREAM_TIMEOUT)
+    app.state.pool_loads = PoolLoadTracker()
+    app.state.pool_metrics_stop = asyncio.Event()
+    app.state.pool_metrics_task = asyncio.create_task(
+        app.state.pool_loads.poll_loop(
+            app.state.http,
+            PREFILL_SERVICE_URL,
+            DECODE_SERVICE_URL,
+            POOL_METRICS_POLL_INTERVAL,
+            app.state.pool_metrics_stop,
+        )
+    )
     try:
         yield
     finally:
+        app.state.pool_metrics_stop.set()
+        await app.state.pool_metrics_task
         await app.state.http.aclose()
 
 
@@ -72,6 +95,9 @@ async def healthz() -> dict[str, str]:
 
 @app.get("/metrics")
 async def metrics() -> Response:
+    loads: PoolLoadTracker = app.state.pool_loads
+    ROUTER_POOL_QUEUE_DEPTH.labels(pool="decode").set(loads.decode_waiting)
+    ROUTER_POOL_QUEUE_DEPTH.labels(pool="prefill").set(loads.prefill_waiting)
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
@@ -81,6 +107,7 @@ def _routing_headers(classification: Classification, request_id: str) -> dict[st
         "X-Router-Prompt-Len": str(classification.prompt_len),
         "X-Router-Model-Class": classification.model_class.value,
         "X-Router-Pool": classification.route_pool.value,
+        "X-Router-Route-Reason": classification.route_reason,
     }
 
 
@@ -129,21 +156,33 @@ async def chat_completions(request: Request) -> Response:
     model = body.get("model") or DEFAULT_MODEL
     body["model"] = model
 
-    classification = classify_request(messages, model)
+    loads: PoolLoadTracker = request.app.state.pool_loads
+    classification = classify_request(
+        messages,
+        model,
+        decode_queue=loads.decode_waiting,
+        prefill_queue=loads.prefill_waiting,
+    )
     request_id = request.headers.get("X-Request-Id", str(uuid.uuid4()))
 
     ROUTER_REQUESTS.labels(
         classification.route_pool.value,
         classification.model_class.value,
+        classification.route_reason,
     ).inc()
 
     logger.info(
-        "route request_id=%s model=%s prompt_len=%d pool=%s class=%s",
+        "route request_id=%s model=%s prompt_len=%d pool=%s class=%s reason=%s "
+        "decode_queue=%d prefill_queue=%d stale=%s",
         request_id,
         model,
         classification.prompt_len,
         classification.route_pool.value,
         classification.model_class.value,
+        classification.route_reason,
+        loads.decode_waiting,
+        loads.prefill_waiting,
+        loads.stale,
     )
 
     client: httpx.AsyncClient = request.app.state.http

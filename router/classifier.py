@@ -31,6 +31,7 @@ class Classification:
     model_class: ModelClass
     route_pool: RoutePool
     upstream_url: str
+    route_reason: str
 
 
 # Heuristic token estimate: ~4 chars per token for English text.
@@ -42,6 +43,13 @@ _DRAFT_PATTERN = re.compile(r"draft|7b-instruct|speculative", re.I)
 
 def _config_int(name: str, default: int) -> int:
     return int(os.getenv(name, str(default)))
+
+
+def _config_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.lower() in {"1", "true", "yes", "on"}
 
 
 def estimate_prompt_tokens(messages: list[dict]) -> int:
@@ -77,12 +85,16 @@ def classify_request(
     threshold: Optional[int] = None,
     prefill_url: Optional[str] = None,
     decode_url: Optional[str] = None,
+    decode_queue: int = 0,
+    prefill_queue: int = 0,
+    decode_saturation_threshold: Optional[int] = None,
+    prefill_spillover_enabled: Optional[bool] = None,
 ) -> Classification:
     """
     Classify an incoming request and select the upstream vLLM pool.
 
-    Short prompts (≤ threshold) go directly to the decode pool.
-    Long prompts (> threshold) use disaggregated prefill on H200/B200 nodes.
+    Long prompts (> threshold) always use disaggregated prefill.
+    Short prompts default to decode; spill to prefill when decode is saturated.
     """
     threshold = threshold if threshold is not None else _config_int(
         "PROMPT_LEN_DISAGGREGATE_THRESHOLD", 2048
@@ -93,6 +105,13 @@ def classify_request(
     decode_url = decode_url or os.getenv(
         "DECODE_SERVICE_URL", "http://vllm-decode:8000"
     )
+    decode_saturation_threshold = (
+        decode_saturation_threshold
+        if decode_saturation_threshold is not None
+        else _config_int("DECODE_QUEUE_SATURATION_THRESHOLD", 16)
+    )
+    if prefill_spillover_enabled is None:
+        prefill_spillover_enabled = _config_bool("PREFILL_SPILLOVER_ENABLED", True)
 
     prompt_len = estimate_prompt_tokens(messages)
     model_class = classify_model(model)
@@ -103,6 +122,20 @@ def classify_request(
             model_class=model_class,
             route_pool=RoutePool.PREFILL,
             upstream_url=prefill_url.rstrip("/"),
+            route_reason="disaggregate",
+        )
+
+    if (
+        prefill_spillover_enabled
+        and decode_queue >= decode_saturation_threshold
+        and prefill_queue < decode_queue
+    ):
+        return Classification(
+            prompt_len=prompt_len,
+            model_class=model_class,
+            route_pool=RoutePool.PREFILL,
+            upstream_url=prefill_url.rstrip("/"),
+            route_reason="spillover",
         )
 
     return Classification(
@@ -110,4 +143,5 @@ def classify_request(
         model_class=model_class,
         route_pool=RoutePool.DECODE,
         upstream_url=decode_url.rstrip("/"),
+        route_reason="default",
     )

@@ -32,3 +32,8 @@ data:
 
   # Router log level.
   LOG_LEVEL: info
+
+  # Load-aware routing — poll vLLM /metrics and spill short prompts to prefill when decode is saturated.
+  POOL_METRICS_POLL_INTERVAL_SECONDS: "2"
+  DECODE_QUEUE_SATURATION_THRESHOLD: "16"
+  PREFILL_SPILLOVER_ENABLED: "true"

@@ -8,6 +8,7 @@ patches:
   - path: vllm-decode-dev.yaml
   - path: vllm-prefill-dev.yaml
   - path: router-config-dev.yaml
+  - path: hpa-patch.yaml
   - target:
       kind: Deployment
       name: vllm-decode

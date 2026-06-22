@@ -96,6 +96,7 @@ spec:
                 --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}" \
                 --max-model-len "${MAX_MODEL_LEN}" \
                 --enable-chunked-prefill \
+                --enable-prefix-caching \
                 --port 8000 \
                 --host 0.0.0.0 \
                 --disable-log-requests

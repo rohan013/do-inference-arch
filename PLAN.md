@@ -86,6 +86,18 @@ builds router image → pushes to DOCR → `kubectl apply -R -f k8s/` → smoke 
 6. Confirm vLLM pods schedule: `kubectl get pods -n inference`
 7. End-to-end test: `REQUIRE_CHAT_200=1 ./provision/06-smoke-test.sh`
 
+### Load-aware routing and autoscaling
+
+- Router polls vLLM `/metrics` every 2s for `vllm:num_requests_waiting` and spills short prompts to prefill when decode queue depth exceeds `DECODE_QUEUE_SATURATION_THRESHOLD` (default 16).
+- HPA scales `vllm-decode` and `vllm-prefill` on per-pod queue depth via Prometheus Adapter (`vllm_num_requests_waiting`, target 8 avg per pod).
+- Prefill deployment enables `--enable-prefix-caching` alongside chunked prefill.
+- HPA scales pods, not GPU nodes — ensure node pool capacity before expecting scale-up to succeed.
+
+```bash
+kubectl get hpa -n inference
+kubectl get --raw "/apis/custom.metrics.k8s.io/v1beta1/namespaces/inference/pods/*/vllm_num_requests_waiting"
+```
+
 ---
 
 ## What Needs to Be Built Next
