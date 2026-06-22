@@ -36,6 +36,8 @@ CHAT_CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://${LB_IP}/v1/
   -d "{\"model\":\"${DEFAULT_MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}")"
 if [[ "${CHAT_CODE}" == "200" ]]; then
   log "chat completions returned 200"
+elif [[ "${REQUIRE_CHAT_200:-0}" == "1" ]]; then
+  die "chat completions returned ${CHAT_CODE} (expected 200 — check vLLM pods and HF_TOKEN)"
 else
   log "WARN: chat completions returned ${CHAT_CODE} (expected until vLLM GPU pods are ready)"
 fi

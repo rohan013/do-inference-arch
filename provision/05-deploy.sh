@@ -17,13 +17,18 @@ else
   doctl kubernetes cluster registry add "${CLUSTER_NAME}" 2>/dev/null || true
 fi
 
-log "applying k8s manifests..."
-run kubectl apply -f "${REPO_ROOT}/k8s/namespace.yaml"
+KUSTOMIZE_PATH="${KUSTOMIZE_PATH:-${REPO_ROOT}/k8s/base}"
+log "applying k8s manifests from ${KUSTOMIZE_PATH}..."
+run kubectl apply -f "${REPO_ROOT}/k8s/base/namespace.yaml"
 if [[ "${DRY_RUN}" != "1" ]]; then
   kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/inference --timeout=60s
   doctl registry kubernetes-manifest --namespace inference | kubectl apply -f -
 fi
-run kubectl apply -R -f "${REPO_ROOT}/k8s/"
+if [[ -f "${KUSTOMIZE_PATH}/kustomization.yaml" ]]; then
+  run kubectl apply -k "${KUSTOMIZE_PATH}"
+else
+  run kubectl apply -R -f "${KUSTOMIZE_PATH}"
+fi
 
 if [[ -n "${ROUTER_IMAGE:-}" ]]; then
   log "patching request-router image to ${ROUTER_IMAGE}..."

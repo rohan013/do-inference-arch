@@ -14,6 +14,8 @@ Steps (default: all):
   04-publish-router
   05-deploy
   06-smoke-test
+  07-sync-weights
+  08-apply-hf-secret
 
 Environment:
   DRY_RUN=1          Print commands without executing

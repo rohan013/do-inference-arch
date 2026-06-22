@@ -68,6 +68,11 @@ spec:
             - configMapRef:
                 name: vllm-decode-config
           env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
             - name: VLLM_HOST_IP
               valueFrom:
                 fieldRef:

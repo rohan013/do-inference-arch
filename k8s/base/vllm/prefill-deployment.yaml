@@ -70,6 +70,11 @@ spec:
             - configMapRef:
                 name: vllm-prefill-config
           env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
             - name: VLLM_HOST_IP
               valueFrom:
                 fieldRef:

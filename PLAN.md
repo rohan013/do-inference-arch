@@ -26,13 +26,12 @@ do-inference-arch/
 ├── diagrams/
 │   └── system-architecture.mmd   ✅ Mermaid source for full system diagram
 ├── k8s/                          ✅ Kubernetes manifests (Phase 2)
-│   ├── namespace.yaml
-│   ├── request-router/
-│   ├── vllm/
-│   ├── redis/
-│   ├── monitoring/
-│   ├── ingress/
-│   └── gpu/
+│   ├── base/
+│   │   ├── namespace.yaml
+│   │   ├── request-router/
+│   │   ├── vllm/
+│   │   └── ...
+│   └── overlays/dev/             ✅ Single-GPU dev fallback (TP=1)
 ├── router/                       ✅ Request router (Phase 3)
 │   ├── main.py
 │   ├── classifier.py
@@ -73,9 +72,19 @@ builds router image → pushes to DOCR → `kubectl apply -R -f k8s/` → smoke 
 
 ### After bootstrap — GPU readiness
 
-1. Upload model weights to DO Spaces (see `02-create-spaces.sh` output)
-2. Attach Block Storage volumes to GPU nodes at `/mnt/nvme/checkpoints`
-3. Confirm vLLM pods schedule: `kubectl get pods -n inference`
+1. Verify GPU slugs: `doctl kubernetes options sizes | grep -i gpu`
+2. Production (H200 + MI300X): `./provision/01-create-cluster.sh` with `USE_DEV_GPU=0`
+3. Dev fallback (single GPU): set `USE_DEV_GPU=1`, create `gpu-dev` pool, deploy overlay:
+   ```bash
+   KUSTOMIZE_PATH=k8s/overlays/dev ./provision/05-deploy.sh
+   ```
+4. HuggingFace token (required for Llama 3.1):
+   ```bash
+   HF_TOKEN=dhf_... ./provision/08-apply-hf-secret.sh
+   ```
+5. Upload model weights to DO Spaces: `./provision/07-sync-weights.sh ./llama-3.1-8b`
+6. Confirm vLLM pods schedule: `kubectl get pods -n inference`
+7. End-to-end test: `REQUIRE_CHAT_200=1 ./provision/06-smoke-test.sh`
 
 ---
 
@@ -88,7 +97,9 @@ All phases complete.
 See `k8s/` directory. Deploy with:
 
 ```bash
-kubectl apply -R -f k8s/
+kubectl apply -k k8s/base
+# or dev overlay:
+kubectl apply -k k8s/overlays/dev
 kubectl get pods -n inference
 ```
 

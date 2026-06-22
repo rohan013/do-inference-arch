@@ -21,7 +21,8 @@ if [[ "${DRY_RUN}" != "1" ]]; then
 fi
 
 log "building router image for linux/amd64..."
-run docker build --platform linux/amd64 -t "${ROUTER_IMAGE}" "${REPO_ROOT}/router"
+# Mac builders: DOCKER_BUILDKIT=0 avoids occasional cross-platform BuildKit issues.
+run env DOCKER_BUILDKIT=0 docker build --platform linux/amd64 -t "${ROUTER_IMAGE}" "${REPO_ROOT}/router"
 
 log "pushing ${ROUTER_IMAGE}..."
 run docker push "${ROUTER_IMAGE}"

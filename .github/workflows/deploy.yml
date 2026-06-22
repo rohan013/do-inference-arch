@@ -55,9 +55,9 @@ jobs:
 
       - name: Apply Kubernetes manifests
         run: |
-          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/base/namespace.yaml
           kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/inference --timeout=60s
-          kubectl apply -R -f k8s/
+          kubectl apply -k k8s/base
 
       - name: Update request-router image
         run: |

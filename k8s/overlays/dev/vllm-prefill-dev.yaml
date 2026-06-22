@@ -1,0 +1,8 @@
+# Prefill is disabled in dev overlay (replicas: 0 in kustomization.yaml).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-prefill
+  namespace: inference
+spec:
+  replicas: 0

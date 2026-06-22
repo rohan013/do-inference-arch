@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: request-router-config
+  namespace: inference
+data:
+  # Route all traffic to decode pool in single-GPU dev mode.
+  PROMPT_LEN_DISAGGREGATE_THRESHOLD: "999999"

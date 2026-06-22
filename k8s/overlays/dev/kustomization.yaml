@@ -1,0 +1,30 @@
+# Single-GPU dev overlay: TP=1, all traffic routed to decode, prefill scaled to 0.
+# Apply: kubectl apply -k k8s/overlays/dev
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - path: vllm-decode-dev.yaml
+  - path: vllm-prefill-dev.yaml
+  - path: router-config-dev.yaml
+  - target:
+      kind: Deployment
+      name: vllm-decode
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests:
+            cpu: "4"
+            memory: 32Gi
+            nvidia.com/gpu: "1"
+          limits:
+            cpu: "8"
+            memory: 48Gi
+            nvidia.com/gpu: "1"
+replicas:
+  - name: vllm-prefill
+    count: 0
+  - name: vllm-decode
+    count: 1

@@ -74,7 +74,17 @@ wait_for_cluster() {
 label_gpu_pools() {
   log "labeling GPU node pools (inference.do/pool)..."
   if [[ "${DRY_RUN}" == "1" ]]; then
-    log "dry-run: would label nodes in pools ${PREFILL_POOL_NAME} and ${DECODE_POOL_NAME}"
+    if [[ "${USE_DEV_GPU:-0}" == "1" ]]; then
+      log "dry-run: would label nodes in pool ${DEV_GPU_POOL_NAME}"
+    else
+      log "dry-run: would label nodes in pools ${PREFILL_POOL_NAME} and ${DECODE_POOL_NAME}"
+    fi
+    return 0
+  fi
+
+  if [[ "${USE_DEV_GPU:-0}" == "1" ]]; then
+    kubectl label nodes -l doks.digitalocean.com/node-pool="${DEV_GPU_POOL_NAME}" \
+      inference.do/pool=decode --overwrite
     return 0
   fi
 
