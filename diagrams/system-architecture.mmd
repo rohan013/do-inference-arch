@@ -1,0 +1,64 @@
+graph TB
+    subgraph Internet["Client"]
+        Client[API Consumer\ncurl / SDK]
+    end
+
+    subgraph DO_LB["DigitalOcean Load Balancer"]
+        LB[L7 Load Balancer\nTLS termination]
+    end
+
+    subgraph DOKS["DOKS — Kubernetes Cluster"]
+        Router[Request Router\nclassify by prompt_len\nmodel_class]
+
+        subgraph PrefillPool["Prefill Node Pool — H200 / B200 GPU Droplets"]
+            PF1[Prefill Worker 0\nvLLM + FlashAttn-3\nTP=8 NVLink]
+            PF2[Prefill Worker 1\nvLLM + FlashAttn-3\nTP=8 NVLink]
+        end
+
+        subgraph DecodePool["Decode Node Pool — MI300X / MI325X GPU Droplets"]
+            DC1[Decode Worker 0\nvLLM + PagedAttention\nEP=8 xGMI]
+            DC2[Decode Worker 1\nvLLM + PagedAttention\nEP=8 xGMI]
+        end
+
+        subgraph DraftPool["Draft Model Pool — 1x GPU Droplet"]
+            DM[Speculative Decode\nDP=8 replicas\nBF16 draft model]
+        end
+
+        subgraph Observability["Observability Stack"]
+            DCGM[DCGM Exporter\nNVIDIA GPU metrics]
+            ROCM[ROCm SMI Exporter\nAMD GPU metrics]
+            Prom[Prometheus\n+ Thanos]
+            Grafana[Grafana Dashboard\nTTFT · TPOT · MFU · KV hit]
+        end
+    end
+
+    subgraph DOManaged["DigitalOcean Managed Services"]
+        Redis[Managed Redis\nPrefix cache DHT\nKV page table]
+        Spaces[DO Spaces\nBF16 model weights\nS3-compatible]
+        Volumes[Block Storage Volumes\nFP8 checkpoint cache\nper GPU Droplet]
+    end
+
+    Client -->|HTTPS POST /v1/chat/completions| LB
+    LB --> Router
+
+    Router -->|prompt_len > 2K| PF1
+    Router -->|prompt_len > 2K| PF2
+    Router -->|prompt_len ≤ 2K| DC1
+    Router -->|prompt_len ≤ 2K| DC2
+    Router -->|speculative assist| DM
+
+    PF1 -->|KV transfer 25Gbps VPC| DC1
+    PF2 -->|KV transfer 25Gbps VPC| DC2
+    DC1 <-->|speculative tokens| DM
+    DC2 <-->|speculative tokens| DM
+
+    DC1 <-->|prefix cache lookup| Redis
+    DC2 <-->|prefix cache lookup| Redis
+
+    PF1 & PF2 & DC1 & DC2 -->|cold start: pull weights| Spaces
+    PF1 & PF2 & DC1 & DC2 -->|cold start: FP8 checkpoint| Volumes
+
+    PF1 & PF2 --> DCGM
+    DC1 & DC2 --> ROCM
+    DCGM & ROCM --> Prom
+    Prom --> Grafana
