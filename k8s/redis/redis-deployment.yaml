@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: do-agentic-inference
+data:
+  redis.conf: |
+    maxmemory 4gb
+    maxmemory-policy allkeys-lru
+    appendonly yes
+    appendfsync everysec
+    # Prefix cache pages: 10-minute TTL for user session keys (see spec §2.3).
+    # Application sets EXPIRE; redis.conf documents the intended policy.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: do-agentic-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: redis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: redis
+        app.kubernetes.io/part-of: do-agentic-inference
+    spec:
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          command:
+            - redis-server
+            - /etc/redis/redis.conf
+          volumeMounts:
+            - name: config
+              mountPath: /etc/redis
+            - name: data
+              mountPath: /data
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - ping
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "250m"
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 4Gi
+      volumes:
+        - name: config
+          configMap:
+            name: redis-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: redis
+    app.kubernetes.io/part-of: do-agentic-inference
+  annotations:
+    # Production: replace with DO Managed Redis connection string in router/vLLM config.
+    inference.do/managed-service-note: "Use DO Managed Redis for prefix cache DHT in Phase 4"
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: redis
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP

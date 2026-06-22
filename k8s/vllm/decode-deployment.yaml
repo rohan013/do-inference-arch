@@ -1,0 +1,129 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vllm-decode-config
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: vllm-decode
+    app.kubernetes.io/part-of: do-agentic-inference
+data:
+  MODEL_NAME: meta-llama/Meta-Llama-3.1-8B-Instruct
+  SERVED_MODEL_NAME: llama-3.1-8b
+  TENSOR_PARALLEL_SIZE: "8"
+  MAX_MODEL_LEN: "32768"
+  MAX_NUM_SEQS: "256"
+  MODEL_WEIGHTS_URI: s3://do-spaces-inference-weights/models/llama-3.1-8b/
+  CHECKPOINT_CACHE_PATH: /mnt/nvme/checkpoints
+  REDIS_URL: redis://redis:6379/0
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vllm-decode
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: vllm-decode
+    app.kubernetes.io/part-of: do-agentic-inference
+    inference.do/pool: decode
+    inference.do/phase: decode
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: vllm-decode
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: vllm-decode
+        app.kubernetes.io/part-of: do-agentic-inference
+        inference.do/pool: decode
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: /metrics
+    spec:
+      # Label GPU node pools at cluster creation: inference.do/pool=decode
+      nodeSelector:
+        inference.do/pool: decode
+      tolerations:
+        - key: amd.com/gpu
+          operator: Exists
+          effect: NoSchedule
+        - key: inference.do/pool
+          operator: Equal
+          value: decode
+          effect: NoSchedule
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:v0.8.5
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+            - name: metrics
+              containerPort: 8001
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: vllm-decode-config
+          env:
+            - name: VLLM_HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: VLLM_KV_CACHE_ROLE
+              value: consumer
+            - name: VLLM_KV_TRANSFER_BACKEND
+              value: nccl
+            - name: NCCL_SOCKET_IFNAME
+              value: eth1
+            - name: HIP_VISIBLE_DEVICES
+              value: "0,1,2,3,4,5,6,7"
+          command:
+            - /bin/sh
+            - -ec
+          args:
+            - |
+              exec python3 -m vllm.entrypoints.openai.api_server \
+                --model "${MODEL_NAME}" \
+                --served-model-name "${SERVED_MODEL_NAME}" \
+                --tensor-parallel-size "${TENSOR_PARALLEL_SIZE}" \
+                --max-model-len "${MAX_MODEL_LEN}" \
+                --max-num-seqs "${MAX_NUM_SEQS}" \
+                --enable-prefix-caching \
+                --port 8000 \
+                --host 0.0.0.0 \
+                --disable-log-requests
+          resources:
+            requests:
+              cpu: "32"
+              memory: 384Gi
+              amd.com/gpu: "8"
+            limits:
+              cpu: "64"
+              memory: 512Gi
+              amd.com/gpu: "8"
+          volumeMounts:
+            - name: checkpoint-cache
+              mountPath: /mnt/nvme/checkpoints
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 15
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 300
+            periodSeconds: 30
+            timeoutSeconds: 5
+      volumes:
+        - name: checkpoint-cache
+          hostPath:
+            path: /mnt/nvme/checkpoints
+            type: DirectoryOrCreate

@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: do-agentic-inference
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus-inference-scraper
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: do-agentic-inference
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/metrics
+      - services
+      - endpoints
+      - pods
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus-inference-scraper
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: do-agentic-inference
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus-inference-scraper
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: inference

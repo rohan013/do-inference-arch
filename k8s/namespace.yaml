@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference
+  labels:
+    app.kubernetes.io/part-of: do-agentic-inference
+    app.kubernetes.io/managed-by: kubectl
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: inference-gpu-quota
+  namespace: inference
+  labels:
+    app.kubernetes.io/part-of: do-agentic-inference
+spec:
+  hard:
+    # Cap total GPU requests across all pools; tune per cluster size.
+    requests.nvidia.com/gpu: "64"
+    limits.nvidia.com/gpu: "64"
+    pods: "200"
+    services: "20"
+    persistentvolumeclaims: "10"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: inference-default-limits
+  namespace: inference
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: "500m"
+        memory: 512Mi
+      default:
+        cpu: "2"
+        memory: 2Gi

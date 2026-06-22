@@ -6,7 +6,8 @@ can pick up work without needing prior context.
 ## Current Status
 
 Phase 1 complete: architecture specification, core Python modules, and system diagram.
-Phase 2 (Kubernetes manifests + DigitalOcean provisioning) is next.
+Phase 2 complete: Kubernetes manifests (namespace, router, vLLM pools, Redis, monitoring, ingress).
+Phase 3 (request router code) is next.
 
 ---
 
@@ -20,35 +21,28 @@ do-inference-arch/
 │   ├── quant_config.py           ✅ FP8/INT8/BF16 per-layer quantization config
 │   ├── agentic_scheduler.py      ✅ Iteration-level scheduler with tool preemption
 │   └── telemetry.py              ✅ Prometheus metrics + RequestTrace dataclass
-└── diagrams/
-    └── system-architecture.mmd   ✅ Mermaid source for full system diagram
+├── diagrams/
+│   └── system-architecture.mmd   ✅ Mermaid source for full system diagram
+└── k8s/                          ✅ Kubernetes manifests (Phase 2)
+    ├── namespace.yaml
+    ├── request-router/
+    ├── vllm/
+    ├── redis/
+    ├── monitoring/
+    └── ingress/
 ```
 
 ---
 
 ## What Needs to Be Built Next
 
-### Phase 2 — Kubernetes Manifests (no GPU required yet)
+### Phase 2 — Kubernetes Manifests ✅
 
-```
-k8s/
-├── namespace.yaml                 ← inference namespace + resource quotas
-├── request-router/
-│   ├── deployment.yaml            ← FastAPI router pod, classifies by prompt_len
-│   ├── service.yaml               ← ClusterIP service
-│   └── configmap.yaml             ← routing thresholds (2K token cutoff, etc.)
-├── vllm/
-│   ├── prefill-deployment.yaml    ← vLLM with --tensor-parallel-size=8, prefill role
-│   ├── decode-deployment.yaml     ← vLLM with --tensor-parallel-size=8, decode role
-│   └── service.yaml               ← ClusterIP for both pools
-├── redis/
-│   └── redis-deployment.yaml      ← or point to DO Managed Redis
-├── monitoring/
-│   ├── dcgm-exporter.yaml         ← DaemonSet on NVIDIA nodes
-│   ├── prometheus.yaml            ← Deployment + PVC
-│   └── grafana.yaml               ← Deployment + ConfigMap with dashboard JSON
-└── ingress/
-    └── loadbalancer-service.yaml  ← type: LoadBalancer → triggers DO LB creation
+See `k8s/` directory. Deploy with:
+
+```bash
+kubectl apply -R -f k8s/
+kubectl get pods -n inference
 ```
 
 ### Phase 3 — Request Router Code
@@ -102,7 +96,7 @@ python -c "from code.agentic_scheduler import AgenticBatchScheduler; s = Agentic
 # Open diagrams/system-architecture.mmd at https://mermaid.live
 
 # Deploy to DOKS (Phase 4)
-kubectl apply -f k8s/
+kubectl apply -R -f k8s/
 kubectl get pods -n inference
 curl -X POST http://$(kubectl get svc ingress-lb -n inference -o jsonpath='{.status.loadBalancer.ingress[0].ip}')/v1/chat/completions \
   -H "Content-Type: application/json" \

@@ -1,0 +1,286 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: do-agentic-inference
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboards
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: do-agentic-inference
+data:
+  dashboard-provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: inference
+        orgId: 1
+        folder: Inference
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+  inference-kpis.json: |
+    {
+      "uid": "do-inference-kpis",
+      "title": "DO Agentic Inference — KPIs",
+      "tags": ["inference", "digitalocean"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "version": 1,
+      "refresh": "30s",
+      "panels": [
+        {
+          "id": 1,
+          "title": "TTFT P99 (ms)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(inference_ttft_ms_bucket[5m])) by (le, model_id))",
+              "legendFormat": "{{model_id}} P99"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 200},
+                  {"color": "red", "value": 800}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 2,
+          "title": "TPOT P99 (ms)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "targets": [
+            {
+              "expr": "histogram_quantile(0.99, sum(rate(inference_tpot_ms_bucket[5m])) by (le, model_id))",
+              "legendFormat": "{{model_id}} P99"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 30},
+                  {"color": "red", "value": 80}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 3,
+          "title": "Prefill GPU MFU",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+          "targets": [
+            {
+              "expr": "avg(inference_gpu_mfu{phase=\"prefill\"}) by (node_id)",
+              "legendFormat": "{{node_id}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "yellow", "value": 0.3},
+                  {"color": "green", "value": 0.55}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 4,
+          "title": "KV Cache Hit Rate",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "targets": [
+            {
+              "expr": "avg(inference_kv_cache_hit_rate) by (model_id, node_id)",
+              "legendFormat": "{{model_id}} @ {{node_id}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "min": 0,
+              "max": 1,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "red", "value": null},
+                  {"color": "yellow", "value": 0.4},
+                  {"color": "green", "value": 0.7}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 5,
+          "title": "MoE Expert Load CV",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+          "targets": [
+            {
+              "expr": "max(moe_expert_load_imbalance_cv) by (model_id, layer_idx)",
+              "legendFormat": "{{model_id}} layer {{layer_idx}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {"color": "green", "value": null},
+                  {"color": "yellow", "value": 0.3},
+                  {"color": "red", "value": 0.6}
+                ]
+              }
+            }
+          }
+        },
+        {
+          "id": 6,
+          "title": "Agentic KV Swaps (rate)",
+          "type": "timeseries",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "targets": [
+            {
+              "expr": "sum(rate(agentic_kv_swap_total[5m])) by (node_id)",
+              "legendFormat": "{{node_id}}"
+            }
+          ]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: do-agentic-inference
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: grafana
+        app.kubernetes.io/part-of: do-agentic-inference
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.5.2
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              value: admin
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              value: changeme
+            - name: GF_PATHS_PROVISIONING
+              value: /etc/grafana/provisioning
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+            - name: dashboards-config
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "250m"
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboards-config
+          configMap:
+            name: grafana-dashboards
+            items:
+              - key: dashboard-provider.yaml
+                path: dashboard-provider.yaml
+        - name: dashboards
+          configMap:
+            name: grafana-dashboards
+            items:
+              - key: inference-kpis.json
+                path: inference-kpis.json
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: inference
+  labels:
+    app.kubernetes.io/name: grafana
+    app.kubernetes.io/part-of: do-agentic-inference
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP
