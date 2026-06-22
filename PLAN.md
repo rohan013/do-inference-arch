@@ -8,7 +8,8 @@ can pick up work without needing prior context.
 Phase 1 complete: architecture specification, core Python modules, and system diagram.
 Phase 2 complete: Kubernetes manifests (namespace, router, vLLM pools, Redis, monitoring, ingress).
 Phase 3 complete: request router (FastAPI proxy, classifier, Dockerfile).
-Phase 4 (GPU droplet provisioning) is next.
+Phase 4 complete: DO provisioning scripts (cluster, Spaces, volumes, deploy, smoke test).
+All planned phases complete.
 
 ---
 
@@ -24,23 +25,37 @@ do-inference-arch/
 │   └── telemetry.py              ✅ Prometheus metrics + RequestTrace dataclass
 ├── diagrams/
 │   └── system-architecture.mmd   ✅ Mermaid source for full system diagram
-└── k8s/                          ✅ Kubernetes manifests (Phase 2)
-    ├── namespace.yaml
-    ├── request-router/
-    ├── vllm/
-    ├── redis/
-    ├── monitoring/
-    └── ingress/
-└── router/                         ✅ Request router (Phase 3)
-    ├── main.py
-    ├── classifier.py
-    ├── Dockerfile
-    └── requirements.txt
+├── k8s/                          ✅ Kubernetes manifests (Phase 2)
+│   ├── namespace.yaml
+│   ├── request-router/
+│   ├── vllm/
+│   ├── redis/
+│   ├── monitoring/
+│   ├── ingress/
+│   └── gpu/
+├── router/                       ✅ Request router (Phase 3)
+│   ├── main.py
+│   ├── classifier.py
+│   ├── Dockerfile
+│   └── requirements.txt
+└── provision/                    ✅ DO provisioning (Phase 4)
+    ├── config.env.example
+    ├── provision.sh
+    └── 01-create-cluster.sh … 06-smoke-test.sh
 ```
 
 ---
 
 ## What Needs to Be Built Next
+
+All phases complete. To provision on DigitalOcean:
+
+```bash
+cp provision/config.env.example provision/config.env
+# edit slugs/regions, then:
+./provision/provision.sh --dry-run   # preview
+./provision/provision.sh             # execute
+```
 
 ### Phase 2 — Kubernetes Manifests ✅
 
@@ -60,15 +75,20 @@ python -m unittest test_classifier.py
 docker build -t do-inference-router .
 ```
 
-### Phase 4 — GPU Droplet Provisioning
+### Phase 4 — GPU Droplet Provisioning ✅
 
-Steps (using doctl CLI — already installed in interview environment):
-1. `doctl kubernetes cluster create inference-cluster --node-pool "..."`
-2. Add GPU node pool: H200 slug for prefill, MI300X slug for decode
-3. Create DO Spaces bucket, upload quantized model weights
-4. Create Block Storage Volumes, attach to GPU Droplets
-5. Deploy manifests: `kubectl apply -f k8s/`
-6. Test endpoint: `curl https://<DO-LB-IP>/v1/chat/completions`
+```bash
+cp provision/config.env.example provision/config.env
+./provision/provision.sh
+```
+
+Steps automated:
+1. Create DOKS cluster + system node pool
+2. Add H200 prefill and MI300X decode GPU node pools (labeled `inference.do/pool`)
+3. Create DO Spaces bucket for model weights
+4. Create Block Storage volumes for FP8 checkpoint cache
+5. Build/push router image to DO Container Registry
+6. Deploy `k8s/` manifests and smoke-test `/v1/chat/completions`
 
 ---
 
