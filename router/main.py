@@ -21,7 +21,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from prometheus_client import Counter, Gauge, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
-from classifier import Classification, classify_request
+from classifier import Classification, UserTier, classify_request, parse_user_tier
 from pool_metrics import PoolLoadTracker
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info").upper()
@@ -31,7 +31,7 @@ logger = logging.getLogger("request-router")
 ROUTER_REQUESTS = Counter(
     "router_requests_total",
     "Total routed requests",
-    ["route_pool", "model_class", "route_reason"],
+    ["route_pool", "model_class", "route_reason", "user_tier"],
 )
 ROUTER_LATENCY = Histogram(
     "router_upstream_latency_seconds",
@@ -106,6 +106,7 @@ def _routing_headers(classification: Classification, request_id: str) -> dict[st
         "X-Request-Id": request_id,
         "X-Router-Prompt-Len": str(classification.prompt_len),
         "X-Router-Model-Class": classification.model_class.value,
+        "X-Router-User-Tier": classification.user_tier.value,
         "X-Router-Pool": classification.route_pool.value,
         "X-Router-Route-Reason": classification.route_reason,
     }
@@ -157,9 +158,13 @@ async def chat_completions(request: Request) -> Response:
     body["model"] = model
 
     loads: PoolLoadTracker = request.app.state.pool_loads
+    # Production: resolve tier from authenticated identity (API key / JWT / billing DB),
+    # not from a client-controlled header. Header used here for demo/interview simplicity.
+    user_tier: UserTier = parse_user_tier(request.headers.get("X-User-Tier"))
     classification = classify_request(
         messages,
         model,
+        user_tier=user_tier,
         decode_queue=loads.decode_waiting,
         prefill_queue=loads.prefill_waiting,
     )
@@ -169,14 +174,16 @@ async def chat_completions(request: Request) -> Response:
         classification.route_pool.value,
         classification.model_class.value,
         classification.route_reason,
+        classification.user_tier.value,
     ).inc()
 
     logger.info(
-        "route request_id=%s model=%s prompt_len=%d pool=%s class=%s reason=%s "
+        "route request_id=%s model=%s prompt_len=%d tier=%s pool=%s class=%s reason=%s "
         "decode_queue=%d prefill_queue=%d stale=%s",
         request_id,
         model,
         classification.prompt_len,
+        classification.user_tier.value,
         classification.route_pool.value,
         classification.model_class.value,
         classification.route_reason,

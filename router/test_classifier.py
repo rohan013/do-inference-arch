@@ -3,7 +3,15 @@
 import os
 import unittest
 
-from classifier import ModelClass, RoutePool, classify_model, classify_request, estimate_prompt_tokens
+from classifier import (
+    ModelClass,
+    RoutePool,
+    UserTier,
+    classify_model,
+    classify_request,
+    estimate_prompt_tokens,
+    parse_user_tier,
+)
 from pool_metrics import metrics_url_from_service_url, parse_vllm_queue_depth
 
 
@@ -108,6 +116,59 @@ class ClassifierTests(unittest.TestCase):
             self.assertEqual(result.route_pool, RoutePool.PREFILL)
         finally:
             os.environ.pop("PROMPT_LEN_DISAGGREGATE_THRESHOLD", None)
+
+    def test_parse_user_tier_missing(self):
+        self.assertEqual(parse_user_tier(None), UserTier.REGULAR)
+
+    def test_parse_user_tier_premium(self):
+        self.assertEqual(parse_user_tier("PREMIUM"), UserTier.PREMIUM)
+        self.assertEqual(parse_user_tier(" premium "), UserTier.PREMIUM)
+
+    def test_parse_user_tier_regular(self):
+        self.assertEqual(parse_user_tier("REGULAR"), UserTier.REGULAR)
+
+    def test_parse_user_tier_invalid_defaults_regular(self):
+        self.assertEqual(parse_user_tier("enterprise"), UserTier.REGULAR)
+
+    def test_premium_stays_on_decode_under_moderate_load(self):
+        messages = [{"role": "user", "content": "Hello"}]
+        result = classify_request(
+            messages,
+            "llama-3.1-8b",
+            user_tier=UserTier.PREMIUM,
+            decode_queue=20,
+            prefill_queue=4,
+        )
+        self.assertEqual(result.route_pool, RoutePool.DECODE)
+        self.assertEqual(result.route_reason, "default")
+
+    def test_regular_spills_under_moderate_load(self):
+        messages = [{"role": "user", "content": "Hello"}]
+        result = classify_request(
+            messages,
+            "llama-3.1-8b",
+            user_tier=UserTier.REGULAR,
+            decode_queue=20,
+            prefill_queue=4,
+        )
+        self.assertEqual(result.route_pool, RoutePool.PREFILL)
+        self.assertEqual(result.route_reason, "spillover")
+
+    def test_long_prompt_routes_to_prefill_for_both_tiers(self):
+        long_content = "word " * 3000
+        messages = [{"role": "user", "content": long_content}]
+        for tier in (UserTier.PREMIUM, UserTier.REGULAR):
+            with self.subTest(tier=tier):
+                result = classify_request(
+                    messages,
+                    "llama-3.1-8b",
+                    user_tier=tier,
+                    threshold=2048,
+                    decode_queue=100,
+                    prefill_queue=0,
+                )
+                self.assertEqual(result.route_pool, RoutePool.PREFILL)
+                self.assertEqual(result.route_reason, "disaggregate")
 
 
 class PoolMetricsTests(unittest.TestCase):

@@ -27,7 +27,7 @@ data:
   # Default served model name exposed to clients.
   DEFAULT_MODEL: llama-3.1-8b
 
-  # Prometheus scrape port for application metrics (see code/telemetry.py).
+  # Prometheus scrape port for application metrics (see worker/telemetry.py).
   METRICS_PORT: "9090"
 
   # Router log level.
@@ -35,5 +35,6 @@ data:
 
   # Load-aware routing — poll vLLM /metrics and spill short prompts to prefill when decode is saturated.
   POOL_METRICS_POLL_INTERVAL_SECONDS: "2"
-  DECODE_QUEUE_SATURATION_THRESHOLD: "16"
+  DECODE_QUEUE_SATURATION_THRESHOLD_PREMIUM: "32"
+  DECODE_QUEUE_SATURATION_THRESHOLD_REGULAR: "8"
   PREFILL_SPILLOVER_ENABLED: "true"

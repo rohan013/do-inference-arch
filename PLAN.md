@@ -19,7 +19,7 @@ All planned phases complete.
 do-inference-arch/
 ├── inference-arch-spec.md        ✅ 2-3 page production architecture document
 ├── PLAN.md                       ✅ This file
-├── code/
+├── worker/
 │   ├── quant_config.py           ✅ FP8/INT8/BF16 per-layer quantization config
 │   ├── agentic_scheduler.py      ✅ Iteration-level scheduler with tool preemption
 │   └── telemetry.py              ✅ Prometheus metrics + RequestTrace dataclass
@@ -164,8 +164,8 @@ Steps automated:
 ```bash
 # Validate Python modules
 cd do-inference-arch
-python -c "from code.quant_config import MIXTRAL_QUANT; print(MIXTRAL_QUANT)"
-python -c "from code.agentic_scheduler import AgenticBatchScheduler; s = AgenticBatchScheduler(); print(s.stats())"
+python -c "from worker.quant_config import MIXTRAL_QUANT; print(MIXTRAL_QUANT)"
+python -c "from worker.agentic_scheduler import AgenticBatchScheduler; s = AgenticBatchScheduler(); print(s.stats())"
 
 # Render the Mermaid diagram
 # Open diagrams/system-architecture.mmd at https://mermaid.live
