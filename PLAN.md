@@ -7,7 +7,8 @@ can pick up work without needing prior context.
 
 Phase 1 complete: architecture specification, core Python modules, and system diagram.
 Phase 2 complete: Kubernetes manifests (namespace, router, vLLM pools, Redis, monitoring, ingress).
-Phase 3 (request router code) is next.
+Phase 3 complete: request router (FastAPI proxy, classifier, Dockerfile).
+Phase 4 (GPU droplet provisioning) is next.
 
 ---
 
@@ -30,6 +31,11 @@ do-inference-arch/
     ├── redis/
     ├── monitoring/
     └── ingress/
+└── router/                         ✅ Request router (Phase 3)
+    ├── main.py
+    ├── classifier.py
+    ├── Dockerfile
+    └── requirements.txt
 ```
 
 ---
@@ -45,13 +51,13 @@ kubectl apply -R -f k8s/
 kubectl get pods -n inference
 ```
 
-### Phase 3 — Request Router Code
+### Phase 3 — Request Router Code ✅
 
-```
-router/
-├── main.py                        ← FastAPI app, /v1/chat/completions endpoint
-├── classifier.py                  ← classify_request(): prompt_len, model_class
-└── Dockerfile                     ← lightweight Python image, no GPU needed
+```bash
+cd router
+pip install -r requirements.txt
+python -m unittest test_classifier.py
+docker build -t do-inference-router .
 ```
 
 ### Phase 4 — GPU Droplet Provisioning
