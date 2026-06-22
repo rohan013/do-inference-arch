@@ -46,16 +46,42 @@ do-inference-arch/
 
 ---
 
-## What Needs to Be Built Next
+## Deploy (Option A — all on DOKS)
 
-All phases complete. To provision on DigitalOcean:
+Everything runs in one DOKS cluster. Public API: `ingress-lb` → `request-router`.
+
+### One-time bootstrap (local)
 
 ```bash
+# Verify GPU slugs for your region
+doctl kubernetes options sizes | grep -i gpu
+
 cp provision/config.env.example provision/config.env
-# edit slugs/regions, then:
+# Edit CLUSTER_REGION, PREFILL_NODE_SIZE, DECODE_NODE_SIZE, DO_REGISTRY_NAME
+doctl auth init
+
 ./provision/provision.sh --dry-run   # preview
-./provision/provision.sh             # execute
+./provision/provision.sh             # create cluster + first deploy
 ```
+
+### Ongoing deploys (GitHub Actions)
+
+Push to `main` runs [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml):
+builds router image → pushes to DOCR → `kubectl apply -R -f k8s/` → smoke tests `/healthz`.
+
+**Required GitHub secret:** `DIGITALOCEAN_ACCESS_TOKEN` (read/write DO API token).
+
+### After bootstrap — GPU readiness
+
+1. Upload model weights to DO Spaces (see `02-create-spaces.sh` output)
+2. Attach Block Storage volumes to GPU nodes at `/mnt/nvme/checkpoints`
+3. Confirm vLLM pods schedule: `kubectl get pods -n inference`
+
+---
+
+## What Needs to Be Built Next
+
+All phases complete.
 
 ### Phase 2 — Kubernetes Manifests ✅
 

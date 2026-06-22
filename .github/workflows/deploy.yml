@@ -1,0 +1,70 @@
+name: Deploy to DOKS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CLUSTER_NAME: inference-cluster
+  DO_REGISTRY_NAME: inference
+  ROUTER_IMAGE: registry.digitalocean.com/inference/router:latest
+
+jobs:
+  deploy:
+    name: Build and deploy to DOKS
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install doctl
+        uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
+      - name: Ensure cluster exists
+        run: |
+          doctl kubernetes cluster get "${CLUSTER_NAME}" \
+            || { echo "Cluster ${CLUSTER_NAME} not found. Run ./provision/provision.sh locally first."; exit 1; }
+
+      - name: Save kubeconfig
+        run: doctl kubernetes cluster kubeconfig save "${CLUSTER_NAME}" --expiry-seconds 7200
+
+      - name: Log in to DO Container Registry
+        run: doctl registry login
+
+      - name: Ensure registry exists
+        run: |
+          doctl registry get "${DO_REGISTRY_NAME}" \
+            || doctl registry create "${DO_REGISTRY_NAME}"
+
+      - name: Build and push router image
+        run: |
+          docker build -t "${ROUTER_IMAGE}" ./router
+          docker push "${ROUTER_IMAGE}"
+
+      - name: Apply Kubernetes manifests
+        run: kubectl apply -R -f k8s/
+
+      - name: Update request-router image
+        run: |
+          kubectl set image deployment/request-router \
+            router="${ROUTER_IMAGE}" \
+            -n inference
+          kubectl rollout status deployment/request-router -n inference --timeout=300s
+
+      - name: Smoke test ingress
+        run: |
+          LB_IP=""
+          for _ in $(seq 1 30); do
+            LB_IP="$(kubectl get svc ingress-lb -n inference -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+            [[ -n "${LB_IP}" ]] && break
+            sleep 10
+          done
+          [[ -n "${LB_IP}" ]] || { echo "ingress-lb has no external IP"; exit 1; }
+          curl -sf "http://${LB_IP}/healthz"
+          echo "Smoke test passed: http://${LB_IP}/healthz"
