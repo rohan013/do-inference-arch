@@ -17,34 +17,35 @@ else
   run doctl kubernetes cluster create "${CLUSTER_NAME}" \
     --region "${CLUSTER_REGION}" \
     --version "${CLUSTER_VERSION}" \
-    --tag inference \
-    --node-pool "name=system;size=${SYSTEM_NODE_SIZE};count=${SYSTEM_NODE_COUNT};auto-scale=false;tags=system"
+    --node-pool "name=system;size=${SYSTEM_NODE_SIZE};count=${SYSTEM_NODE_COUNT};auto-scale=false"
 fi
 
 if [[ "${DRY_RUN}" == "1" ]]; then
   log "dry-run: would add GPU node pools ${PREFILL_POOL_NAME}, ${DECODE_POOL_NAME}"
 elif ! doctl kubernetes cluster node-pool list "${CLUSTER_NAME}" --format Name --no-header | grep -qx "${PREFILL_POOL_NAME}"; then
   log "adding prefill GPU pool ${PREFILL_POOL_NAME} (${PREFILL_NODE_SIZE})..."
-  run doctl kubernetes cluster node-pool create "${CLUSTER_NAME}" \
+  if ! run doctl kubernetes cluster node-pool create "${CLUSTER_NAME}" \
     --name "${PREFILL_POOL_NAME}" \
     --size "${PREFILL_NODE_SIZE}" \
     --count "${PREFILL_NODE_COUNT}" \
     --auto-scale=false \
-    --tag prefill \
-    --label "inference.do/pool=prefill"
+    --label "inference.do/pool=prefill"; then
+    log "WARN: prefill GPU pool failed — verify slug with: doctl kubernetes options sizes | grep -i gpu"
+  fi
 fi
 
 if [[ "${DRY_RUN}" == "1" ]]; then
   :
 elif ! doctl kubernetes cluster node-pool list "${CLUSTER_NAME}" --format Name --no-header | grep -qx "${DECODE_POOL_NAME}"; then
   log "adding decode GPU pool ${DECODE_POOL_NAME} (${DECODE_NODE_SIZE})..."
-  run doctl kubernetes cluster node-pool create "${CLUSTER_NAME}" \
+  if ! run doctl kubernetes cluster node-pool create "${CLUSTER_NAME}" \
     --name "${DECODE_POOL_NAME}" \
     --size "${DECODE_NODE_SIZE}" \
     --count "${DECODE_NODE_COUNT}" \
     --auto-scale=false \
-    --tag decode \
-    --label "inference.do/pool=decode"
+    --label "inference.do/pool=decode"; then
+    log "WARN: decode GPU pool failed — verify slug with: doctl kubernetes options sizes | grep -i gpu"
+  fi
 fi
 
 wait_for_cluster

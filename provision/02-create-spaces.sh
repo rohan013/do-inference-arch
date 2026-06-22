@@ -7,14 +7,9 @@ source "$(dirname "$0")/lib/common.sh"
 load_config
 ensure_doctl_auth
 
-if [[ "${DRY_RUN}" == "1" ]]; then
-  log "dry-run: would create spaces bucket ${SPACES_BUCKET} if missing"
-elif doctl spaces list --format Name --no-header 2>/dev/null | grep -qx "${SPACES_BUCKET}"; then
-  log "spaces bucket ${SPACES_BUCKET} already exists — skipping create"
-else
-  log "creating spaces bucket ${SPACES_BUCKET} in ${SPACES_REGION}..."
-  run doctl spaces create "${SPACES_BUCKET}" --region "${SPACES_REGION}"
-fi
+log "Spaces bucket target: ${SPACES_BUCKET} (${SPACES_REGION})"
+log "Create via Cloud Panel → Spaces, or:"
+log "  aws s3 mb s3://${SPACES_BUCKET} --endpoint-url https://${SPACES_REGION}.digitaloceanspaces.com"
 
 cat <<EOF
 Upload quantized weights (example):

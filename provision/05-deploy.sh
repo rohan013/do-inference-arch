@@ -10,7 +10,19 @@ require_cmd kubectl
 
 wait_for_cluster
 
+log "integrating DO Container Registry with cluster..."
+if [[ "${DRY_RUN}" == "1" ]]; then
+  log "dry-run: would run doctl kubernetes cluster registry add"
+else
+  doctl kubernetes cluster registry add "${CLUSTER_NAME}" 2>/dev/null || true
+fi
+
 log "applying k8s manifests..."
+run kubectl apply -f "${REPO_ROOT}/k8s/namespace.yaml"
+if [[ "${DRY_RUN}" != "1" ]]; then
+  kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/inference --timeout=60s
+  doctl registry kubernetes-manifest --namespace inference | kubectl apply -f -
+fi
 run kubectl apply -R -f "${REPO_ROOT}/k8s/"
 
 if [[ -n "${ROUTER_IMAGE:-}" ]]; then

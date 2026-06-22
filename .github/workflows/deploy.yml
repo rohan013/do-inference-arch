@@ -44,11 +44,20 @@ jobs:
 
       - name: Build and push router image
         run: |
-          docker build -t "${ROUTER_IMAGE}" ./router
+          docker build --platform linux/amd64 -t "${ROUTER_IMAGE}" ./router
           docker push "${ROUTER_IMAGE}"
 
+      - name: Integrate registry with cluster
+        run: doctl kubernetes cluster registry add "${CLUSTER_NAME}" || true
+
+      - name: Apply registry pull secret
+        run: doctl registry kubernetes-manifest --namespace inference | kubectl apply -f -
+
       - name: Apply Kubernetes manifests
-        run: kubectl apply -R -f k8s/
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl wait --for=jsonpath='{.status.phase}'=Active namespace/inference --timeout=60s
+          kubectl apply -R -f k8s/
 
       - name: Update request-router image
         run: |

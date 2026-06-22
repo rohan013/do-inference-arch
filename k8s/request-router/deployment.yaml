@@ -22,6 +22,8 @@ spec:
         prometheus.io/port: "9090"
         prometheus.io/path: /metrics
     spec:
+      imagePullSecrets:
+        - name: registry-inference
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
@@ -33,9 +35,8 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: router
-          # Phase 3 builds this image; placeholder tag for manifest validation.
-          image: ghcr.io/rohan013/do-inference-router:latest
-          imagePullPolicy: IfNotPresent
+          image: registry.digitalocean.com/inference/router:latest
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080

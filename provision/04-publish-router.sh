@@ -20,8 +20,8 @@ if [[ "${DRY_RUN}" != "1" ]]; then
   doctl registry login
 fi
 
-log "building router image..."
-run docker build -t "${ROUTER_IMAGE}" "${REPO_ROOT}/router"
+log "building router image for linux/amd64..."
+run docker build --platform linux/amd64 -t "${ROUTER_IMAGE}" "${REPO_ROOT}/router"
 
 log "pushing ${ROUTER_IMAGE}..."
 run docker push "${ROUTER_IMAGE}"
